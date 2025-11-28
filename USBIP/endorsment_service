@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+import time
+
+DB_PATH = "/var/lib/usb-policy/endorsements.json"
+
+
+def load_db():
+    if not os.path.exists(DB_PATH):
+        return {}
+    try:
+        with open(DB_PATH, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_db(db):
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    tmp_path = DB_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(db, f, indent=2)
+    os.replace(tmp_path, DB_PATH)
+
+
+def make_key(vid, pid, serial):
+    if not serial:
+        serial = "-"
+    return f"{vid.lower()}:{pid.lower()}:{serial}"
+
+
+def cmd_check(args):
+    db = load_db()
+    key = make_key(args.vid, args.pid, args.serial)
+    now = int(time.time())
+
+    entry = db.get(key)
+    if not entry:
+        # No endorsement for this device
+        return 1
+
+    status = entry.get("status", "unknown")
+    expiry = entry.get("expiry")
+
+    # Expired?
+    if expiry is not None and now > int(expiry):
+        # Optionally mark as expired
+        entry["status"] = "expired"
+        save_db(db)
+        return 1
+
+    if status != "trusted":
+        return 1
+
+    # Trusted and not expired
+    return 0
+
+
+def cmd_endorse(args):
+    db = load_db()
+    key = make_key(args.vid, args.pid, args.serial)
+    now = int(time.time())
+    expiry = None
+    if args.ttl is not None:
+        expiry = now + int(args.ttl)
+
+    db[key] = {
+        "status": "trusted",
+        "created": now,
+        "expiry": expiry,
+        "note": args.note or "",
+    }
+    save_db(db)
+    print(f"Endorsed {key} (expiry={expiry})")
+    return 0
+
+
+def cmd_revoke(args):
+    db = load_db()
+    key = make_key(args.vid, args.pid, args.serial)
+    if key in db:
+        db[key]["status"] = "revoked"
+        save_db(db)
+        print(f"Revoked {key}")
+        return 0
+    else:
+        print(f"No entry for {key}", file=sys.stderr)
+        return 1
+
+
+def cmd_list(args):
+    db = load_db()
+    if not db:
+        print("No endorsements")
+        return 0
+    for key, v in db.items():
+        status = v.get("status", "unknown")
+        expiry = v.get("expiry")
+        note = v.get("note", "")
+        print(f"{key}  status={status}  expiry={expiry}  note={note}")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="USB endorsement"
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    def add_device_args(p):
+        p.add_argument("vid", help="Vendor ID (hex, e.g. 046d)")
+        p.add_argument("pid", help="Product ID (hex, e.g. c53f)")
+        p.add_argument("serial", nargs="?", default="", help="Serial or blank")
+
+    # check
+    p_check = sub.add_parser("check", help="Check if device is allowed")
+    add_device_args(p_check)
+    p_check.set_defaults(func=cmd_check)
+
+    # endorse
+    p_end = sub.add_parser("endorse", help="Add/update trusted endorsement")
+    add_device_args(p_end)
+    p_end.add_argument(
+        "--ttl",
+        type=int,
+        default=None,
+        help="Time-to-live in seconds (optional)",
+    )
+    p_end.add_argument(
+        "--note",
+        type=str,
+        default="",
+        help="Readable note",
+    )
+    p_end.set_defaults(func=cmd_endorse)
+
+    # revoke
+    p_rev = sub.add_parser("revoke", help="Revoke an endorsement")
+    add_device_args(p_rev)
+    p_rev.set_defaults(func=cmd_revoke)
+
+    # list
+    p_list = sub.add_parser("list", help="List all endorsements")
+    p_list.set_defaults(func=cmd_list)
+
+    args = parser.parse_args()
+    rc = args.func(args)
+    sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()

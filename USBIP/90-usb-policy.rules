@@ -1,0 +1,4 @@
+SUBSYSTEM=="usb", \
+  ACTION=="add", \
+  ENV{DEVTYPE}=="usb_device", \
+  RUN+="/usr/local/bin/usb-policy-handler.sh %k"
