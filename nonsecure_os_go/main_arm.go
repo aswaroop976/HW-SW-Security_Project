@@ -129,8 +129,8 @@ func ValidationService(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
 	}
 	fmt.Printf("Validation Service sending request to SMC serializer.\n")
 
-	reqCh <- r // send request to worker
-	<-r.done   // block until worker signals completion
+	reqCh <- r // secure monitor call
+	<-r.done   // block until SMC completed
 	fmt.Printf("Validation Service Exiting\n")
 }
 
@@ -159,8 +159,8 @@ func main() {
 
 	fmt.Printf("NonSecure OS sending terminate applet request to SMC serializer.\n")
 
-	smcRequestCh <- r // send request to worker
-	<-r.done          // block until worker signals completion
+	smcRequestCh <- r // secure monitor call
+	<-r.done          // block until SMC completed
 	close(smcRequestCh)
 
 	log.Printf("Supervisor exits.")
