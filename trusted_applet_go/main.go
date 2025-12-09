@@ -36,7 +36,7 @@ func wait_command() *util.TLV {
 }
 
 func send_response(tag byte, embed bool, value []byte) *util.TLV {
-	rspTLV, err := util.TLV_pack(1, embed, []byte(value))
+	rspTLV, err := util.TLV_pack(tag, embed, []byte(value))
 	if err != nil {
 		panic(err)
 	}
@@ -48,11 +48,17 @@ func send_response(tag byte, embed bool, value []byte) *util.TLV {
 func main() {
 	log.Printf("Trusted Applet boot.")
 
-	cmdTLV := wait_command()
-	log.Printf("APPLET Received password: %s", string(cmdTLV.Value))
+	for {
+		cmdTLV := wait_command()
+		log.Printf("APPLET Received TAG: %x DATA: %s", cmdTLV.Tag, string(cmdTLV.Value))
 
-	rsp := "ToOS, From TA"
-	send_response(0x21, false, []byte(rsp))
+		if cmdTLV.Tag == 0x7F {
+			break
+		}
+
+		rsp := "ToOS, From TA"
+		send_response(0x21, false, []byte(rsp))
+	}
 
 	log.Printf("Trusted Applet quits.")
 	applet.Exit()

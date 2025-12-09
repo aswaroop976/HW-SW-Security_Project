@@ -5,9 +5,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"runtime"
+	"sync"
 	_ "unsafe"
 
 	"github.com/usbarmory/tamago/dma"
@@ -51,7 +53,7 @@ func init() {
 }
 
 func send_command(tag byte, embed bool, value []byte) *util.TLV {
-	cmdTLV, err := util.TLV_pack(1, embed, []byte(value))
+	cmdTLV, err := util.TLV_pack(tag, embed, []byte(value))
 	if err != nil {
 		panic(err)
 	}
@@ -73,16 +75,93 @@ func wait_response() *util.TLV {
 	return &rspTLV
 }
 
+// Request type: each goroutine creates one of these
+type smcRequest struct {
+	tag        byte
+	embed      bool
+	value      []byte
+	expect_rsp bool
+	rsp        **util.TLV
+	done       chan struct{}
+}
+
+func SMBridge(reqCh <-chan smcRequest) {
+	for req := range reqCh {
+		send_command(req.tag, req.embed, req.value)
+		if req.expect_rsp {
+			*req.rsp = wait_response()
+		}
+		close(req.done)
+	}
+}
+
+func USBBridge(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var rspTLV *util.TLV
+	r := smcRequest{
+		tag:        0x30,
+		embed:      false,
+		value:      []byte("hello1"),
+		expect_rsp: true,
+		rsp:        &rspTLV,
+		done:       make(chan struct{}),
+	}
+
+	fmt.Printf("USB Bridge sending request to SMC serializer.\n")
+
+	reqCh <- r // secure monitor call
+	<-r.done   // block until SMC completed
+	fmt.Printf("USB Bridge finished\n")
+}
+
+func ValidationService(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var rspTLV *util.TLV
+	r := smcRequest{
+		tag:        0x31,
+		embed:      false,
+		value:      []byte("hello2"),
+		expect_rsp: true,
+		rsp:        &rspTLV,
+		done:       make(chan struct{}),
+	}
+	fmt.Printf("Validation Service sending request to SMC serializer.\n")
+
+	reqCh <- r // send request to worker
+	<-r.done   // block until worker signals completion
+	fmt.Printf("Validation Service Exiting\n")
+}
+
 func main() {
-	log.Printf("%s/%s (%s) • system/supervisor (Non-secure:%v)", runtime.GOOS, runtime.GOARCH, runtime.Version(), imx6ul.ARM.NonSecure())
+	log.Printf("%s/%s (%s) • system/supervisor (Non-secure:%v)",
+		runtime.GOOS, runtime.GOARCH, runtime.Version(), imx6ul.ARM.NonSecure())
 
-	log.Printf("Packing a TLV...")
+	smcRequestCh := make(chan smcRequest)
+	var wg sync.WaitGroup
 
-	msg := "ToMyTrustedApplet"
-	send_command(0x20, false, []byte(msg))
-	rspTLV := wait_response()
+	go SMBridge(smcRequestCh)
 
-	log.Printf("OS Received response: %s", string(rspTLV.Value))
+	wg.Add(2)
+	go USBBridge(smcRequestCh, &wg)
+	go ValidationService(smcRequestCh, &wg)
+	wg.Wait()
+
+	r := smcRequest{
+		tag:        0x7F,
+		embed:      false,
+		value:      []byte(""),
+		expect_rsp: false,
+		rsp:        nil,
+		done:       make(chan struct{}),
+	}
+
+	fmt.Printf("NonSecure OS sending terminate applet request to SMC serializer.\n")
+
+	smcRequestCh <- r // send request to worker
+	<-r.done          // block until worker signals completion
+	close(smcRequestCh)
 
 	log.Printf("Supervisor exits.")
 	exit()
