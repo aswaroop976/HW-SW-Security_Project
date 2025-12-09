@@ -6,6 +6,7 @@
 package main
 
 import (
+	"github.com/usbarmory/GoTEE-example/util"
 	"github.com/usbarmory/GoTEE/syscall"
 )
 
@@ -16,4 +17,7 @@ const (
 
 // defined in api_*.s
 func printSecure(byte)
+func commandApplet(*util.TLV)
+func checkAppletResponse(*uint16)
+func getAppletResponse(*util.TLV)
 func exit()

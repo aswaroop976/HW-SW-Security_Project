@@ -6,16 +6,12 @@
 package gotee
 
 import (
-	"crypto/aes"
-	"crypto/sha256"
 	"errors"
 	"log"
 	"math/rand"
 	"sync"
 
-	usbarmory "github.com/usbarmory/tamago/board/usbarmory/mk2"
-	"github.com/usbarmory/tamago/soc/nxp/imx6ul"
-
+	"github.com/usbarmory/GoTEE-example/util"
 	"github.com/usbarmory/GoTEE/monitor"
 )
 
@@ -27,6 +23,10 @@ const (
 )
 
 var nsBoot bool
+
+var appletCmdCh chan *util.TLV
+var appletRspCh chan *util.TLV
+var appletRspLenCh chan uint16
 
 func GoTEE() (err error) {
 	var wg sync.WaitGroup
@@ -41,6 +41,10 @@ func GoTEE() (err error) {
 		return
 	}
 
+	appletCmdCh = make(chan *util.TLV, 10)
+	appletRspCh = make(chan *util.TLV, 10)
+	appletRspLenCh = make(chan uint16, 10)
+
 	nsBoot = true
 
 	// test concurrent execution of:
@@ -53,43 +57,7 @@ func GoTEE() (err error) {
 
 	log.Printf("SM waiting for applet and kernel")
 	wg.Wait()
-
-	usbarmory.LED("blue", false)
-
-	if !imx6ul.Native {
-		return
-	}
-
-	// re-launch Normal World with peripheral restrictions
-	if os, err = loadNormalWorld(true); err != nil {
-		return
-	}
-
-	log.Printf("SM re-launching kernel with TrustZone restrictions")
-	run(os, nil)
-
-	// test restricted peripheral in Secure World
-	log.Printf("SM in Secure World is about to perform key derivation")
-
-	var k []byte
-
-	switch {
-	case imx6ul.CAAM != nil:
-		// set CAAM as Secure
-		imx6ul.CAAM.SetOwner(true)
-
-		k = make([]byte, sha256.Size)
-		err = imx6ul.CAAM.DeriveKey(make([]byte, sha256.Size), k)
-	case imx6ul.DCP != nil:
-		k, err = imx6ul.DCP.DeriveKey(make([]byte, aes.BlockSize), make([]byte, aes.BlockSize), -1)
-	}
-
-	if err != nil {
-		log.Printf("SM in Secure World failed to derive key (%v)", err)
-	} else {
-		log.Printf("SM in Secure World successfully derived key (%x)", k)
-	}
-
+	log.Printf("All goroutines finished.")
 	return
 }
 

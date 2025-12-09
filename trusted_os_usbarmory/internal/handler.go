@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"unsafe"
 
 	"github.com/usbarmory/tamago/arm"
 	"github.com/usbarmory/tamago/soc/nxp/imx6ul"
@@ -36,6 +37,36 @@ func goHandler(ctx *monitor.ExecCtx) (err error) {
 	}
 
 	switch ctx.A0() {
+	case 50:
+		// log.Printf("Received applet-command syscall.")
+		tlv_addr := uintptr(ctx.A1())
+		tlv := (*util.TLV)(unsafe.Pointer(tlv_addr))
+		appletCmdCh <- tlv
+
+	case 51:
+		// log.Printf("Received applet-response-check syscall.")
+		check_addr := uintptr(ctx.A1())
+		check := (*uint16)(unsafe.Pointer(check_addr))
+		if len(appletRspCh) > 0 && len(appletRspLenCh) > 0 {
+			*check = <-appletRspLenCh
+		} else {
+			*check = 0
+		}
+
+	case 52:
+		// log.Printf("Received applet-response-get syscall.")
+		ns_tlv_addr := uintptr(ctx.A1())
+		ns_tlv := (*util.TLV)(unsafe.Pointer(ns_tlv_addr))
+		s_tlv := <-appletRspCh
+
+		// log.Printf("Copying...")
+		ns_tlv.Tag = s_tlv.Tag
+		ns_tlv.Length = s_tlv.Length
+		copy(ns_tlv.Value, s_tlv.Value)
+
+		// log.Printf("SYSCALL received message... TAG: %d, LENGTH: %d, VALUE:%s", s_tlv.Tag, s_tlv.Length, string(s_tlv.Value))
+		// log.Printf("copied message... TAG: %d, LENGTH: %d, VALUE:%s", ns_tlv.Tag, ns_tlv.Length, string(ns_tlv.Value))
+
 	case syscall.SYS_WRITE:
 		// Override write syscall to avoid interleaved logs and to log
 		// simultaneously to remote terminal and serial console.

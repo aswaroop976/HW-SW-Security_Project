@@ -36,3 +36,28 @@ func (r *RPC) LED(led util.LEDStatus, _ *bool) error {
 
 	return nil
 }
+
+func (r *RPC) CheckChannel(_ *bool, ready *bool) error {
+	// log.Printf("Checking for APPLET command. %d commands in queue.", len(appletCmdCh))
+	*ready = len(appletCmdCh) > 0
+	return nil
+}
+
+func (r *RPC) PopChannel(_ *bool, s_tlv *util.TLV) error {
+	// log.Printf("Collecting APPLET command.")
+	ns_tlv := <-appletCmdCh
+	secure_buffer := make([]byte, ns_tlv.Length)
+	copy(secure_buffer, ns_tlv.Value)
+	s_tlv.Tag = ns_tlv.Tag
+	s_tlv.Length = ns_tlv.Length
+	s_tlv.Value = secure_buffer
+	return nil
+}
+
+func (r *RPC) SendResponse(rsp *util.TLV, _ *bool) error {
+	// log.Printf("Stashing APPLET response.")
+	appletRspCh <- rsp
+	appletRspLenCh <- rsp.Length
+	// log.Printf("received message... TAG: %d, LENGTH: %d, VALUE:%s", rsp.Tag, rsp.Length, string(rsp.Value))
+	return nil
+}

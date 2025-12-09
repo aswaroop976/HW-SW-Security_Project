@@ -9,13 +9,10 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"time"
 
+	"github.com/usbarmory/GoTEE-example/util"
 	"github.com/usbarmory/GoTEE/applet"
 	"github.com/usbarmory/GoTEE/syscall"
-
-	"github.com/usbarmory/GoTEE-example/mem"
-	"github.com/usbarmory/GoTEE-example/util"
 )
 
 func init() {
@@ -26,59 +23,37 @@ func init() {
 	runtime.Exit = applet.Crash
 }
 
-func testRNG(n int) {
-	buf := make([]byte, n)
-	syscall.GetRandom(buf, uint(n))
-	log.Printf("applet obtained %d random bytes from monitor: %x", n, buf)
+func wait_command() *util.TLV {
+	var status bool
+	status = false
+	for !status {
+		syscall.Call("RPC.CheckChannel", nil, &status)
+	}
+
+	var cmd util.TLV
+	syscall.Call("RPC.PopChannel", nil, &cmd)
+	return &cmd
 }
 
-func testRPC() {
-	res := ""
-	req := "hello"
-
-	log.Printf("applet requests echo via RPC: %s", req)
-	err := syscall.Call("RPC.Echo", req, &res)
-
+func send_response(tag byte, embed bool, value []byte) *util.TLV {
+	rspTLV, err := util.TLV_pack(1, embed, []byte(value))
 	if err != nil {
-		log.Printf("applet received RPC error: %v", err)
-	} else {
-		log.Printf("applet received echo via RPC: %s", res)
+		panic(err)
 	}
+
+	syscall.Call("RPC.SendResponse", &rspTLV, nil)
+	return rspTLV
 }
 
 func main() {
-	log.Printf("%s/%s (%s) • TEE user applet", runtime.GOOS, runtime.GOARCH, runtime.Version())
+	log.Printf("Trusted Applet boot.")
 
-	// test syscall interface
-	testRNG(16)
+	cmdTLV := wait_command()
+	log.Printf("APPLET Received password: %s", string(cmdTLV.Value))
 
-	// test RPC interface
-	testRPC()
+	rsp := "ToOS, From TA"
+	send_response(0x21, false, []byte(rsp))
 
-	log.Printf("applet will sleep for 5 seconds")
-
-	ledStatus := util.LEDStatus{
-		Name: "blue",
-		On:   true,
-	}
-
-	// test concurrent execution of applet and supervisor/monitor
-	for i := 0; i < 5; i++ {
-		syscall.Call("RPC.LED", ledStatus, nil)
-		ledStatus.On = !ledStatus.On
-
-		time.Sleep(1 * time.Second)
-		log.Printf("applet says %d mississippi", i+1)
-	}
-
-	// test memory protection
-	mem.TestAccess("applet")
-
-	// this should be unreachable
-
-	// test exception handling
-	mem.TestDataAbort("applet")
-
-	// terminate applet
+	log.Printf("Trusted Applet quits.")
 	applet.Exit()
 }
