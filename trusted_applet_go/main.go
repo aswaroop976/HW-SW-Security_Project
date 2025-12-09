@@ -52,12 +52,16 @@ func main() {
 		cmdTLV := wait_command()
 		log.Printf("APPLET Received TAG: %x DATA: %s", cmdTLV.Tag, string(cmdTLV.Value))
 
-		if cmdTLV.Tag == 0x7F {
+		if cmdTLV.Tag == 0x7F { // quit
 			break
 		}
 
-		rsp := "ToOS, From TA"
-		send_response(0x21, false, []byte(rsp))
+		switch cmdTLV.Tag {
+		case 0x30: // check device
+			send_response(0x30, false, []byte{1})
+		case 0x31:
+			send_response(0x31, false, []byte("Hello from the Applet :)"))
+		}
 	}
 
 	log.Printf("Trusted Applet quits.")

@@ -84,3 +84,8 @@ func TLV_unpack(tlv *TLV, out interface{}) error {
 func TLV_embedded(tlv *TLV) bool {
 	return (tlv.Tag & 0x80) > 0
 }
+
+type USBDeviceID struct {
+	VendorID  uint16
+	ProductID uint16
+}

@@ -95,45 +95,6 @@ func SMBridge(reqCh <-chan smcRequest) {
 	}
 }
 
-func USBBridge(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var rspTLV *util.TLV
-	r := smcRequest{
-		tag:        0x30,
-		embed:      false,
-		value:      []byte("hello1"),
-		expect_rsp: true,
-		rsp:        &rspTLV,
-		done:       make(chan struct{}),
-	}
-
-	fmt.Printf("USB Bridge sending request to SMC serializer.\n")
-
-	reqCh <- r // secure monitor call
-	<-r.done   // block until SMC completed
-	fmt.Printf("USB Bridge finished\n")
-}
-
-func ValidationService(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var rspTLV *util.TLV
-	r := smcRequest{
-		tag:        0x31,
-		embed:      false,
-		value:      []byte("hello2"),
-		expect_rsp: true,
-		rsp:        &rspTLV,
-		done:       make(chan struct{}),
-	}
-	fmt.Printf("Validation Service sending request to SMC serializer.\n")
-
-	reqCh <- r // secure monitor call
-	<-r.done   // block until SMC completed
-	fmt.Printf("Validation Service Exiting\n")
-}
-
 func main() {
 	log.Printf("%s/%s (%s) • system/supervisor (Non-secure:%v)",
 		runtime.GOOS, runtime.GOARCH, runtime.Version(), imx6ul.ARM.NonSecure())
