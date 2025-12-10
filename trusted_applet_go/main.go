@@ -56,13 +56,30 @@ func main() {
 			break
 		}
 
-		switch cmdTLV.Tag {
+		switch cmdTLV.Tag & 0x7F {
 		case 0x30: // check device
+			rdr := util.CreateDeserializer(cmdTLV.Value)
+			tlvDeviceID := util.TLV_deserialize(rdr)
+			tlvUSBPacket := util.TLV_deserialize(rdr)
+
+			var deviceID util.USBDeviceID
+			rdr = util.CreateDeserializer(tlvDeviceID.Value)
+			util.Deserialize(rdr, &deviceID)
+			usbPkt := tlvUSBPacket.Value
+
+			log.Printf("[APPLET] Received USB packet from VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
+			log.Printf("[APPLET] Received USB packet %x\n", usbPkt)
 			send_response(0x30, false, []byte{1})
+
 		case 0x31: // endorse
 			var deviceID util.USBDeviceID
-			util.Deserialize(cmdTLV.Value, &deviceID)
-			log.Printf("[APPLET] Received endorsement for VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
+			rdr := util.CreateDeserializer(cmdTLV.Value)
+			util.Deserialize(rdr, &deviceID)
+
+			log.Printf("[APPLET] Received endorsement request for VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
+
+			// Authentication procedure
+
 			send_response(0x31, false, []byte{1})
 		}
 	}

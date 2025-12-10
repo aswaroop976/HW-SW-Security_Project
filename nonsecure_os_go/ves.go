@@ -10,13 +10,14 @@ import (
 
 func endorseDeviceID(deviceID util.USBDeviceID, reqCh chan<- smcRequest) bool {
 
-	buf, _ := util.Serialize(&deviceID)
+	buf := util.CreateSerializer()
+	serial, _ := util.Serialize(buf, &deviceID)
 
 	var rspTLV *util.TLV
 	r := smcRequest{
 		tag:        0x31, // endorse
 		embed:      false,
-		value:      buf,
+		value:      serial,
 		expect_rsp: true,
 		rsp:        &rspTLV,
 		done:       make(chan struct{}),

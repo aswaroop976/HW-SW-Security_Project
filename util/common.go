@@ -12,24 +12,48 @@ type TLV struct {
 	Value  []byte
 }
 
-func Serialize(value interface{}) ([]byte, error) {
+// Serialization Functions
+func CreateSerializer() *bytes.Buffer {
 	var buffer bytes.Buffer
-	if err := binary.Write(&buffer, binary.BigEndian, value); err != nil {
+	return &buffer
+}
+
+func Serialize(buffer *bytes.Buffer, value any) ([]byte, error) {
+	if err := binary.Write(buffer, binary.BigEndian, value); err != nil {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
 }
 
-func Deserialize(buffer []byte, value interface{}) error {
-	if err := binary.Read(bytes.NewReader(buffer), binary.BigEndian, value); err != nil {
+func TLV_serialize(buffer *bytes.Buffer, tlv *TLV) ([]byte, error) {
+	Serialize(buffer, tlv.Tag)
+	Serialize(buffer, tlv.Length)
+	return Serialize(buffer, tlv.Value)
+}
+
+// Deserialization Functions
+func CreateDeserializer(buffer []byte) *bytes.Reader {
+	return bytes.NewReader(buffer)
+}
+
+func Deserialize(reader *bytes.Reader, value any) error {
+	if err := binary.Read(reader, binary.BigEndian, value); err != nil {
 		return err
 	}
 	return nil
 }
 
-func TLV_pack(tag byte, embed bool, value interface{}) (*TLV, error) {
-	var buffer bytes.Buffer
+func TLV_deserialize(reader *bytes.Reader) *TLV {
+	var tlv TLV
+	Deserialize(reader, &tlv.Tag)
+	Deserialize(reader, &tlv.Length)
+	tlv.Value = make([]byte, tlv.Length)
+	Deserialize(reader, &tlv.Value)
+	return &tlv
+}
 
+// TLV Code
+func TLV_pack(tag byte, embed bool, value any) (*TLV, error) {
 	if tag&0x80 != 0 {
 		return nil, fmt.Errorf("tlv embed tag bit already set")
 	}
@@ -38,62 +62,10 @@ func TLV_pack(tag byte, embed bool, value interface{}) (*TLV, error) {
 		tag |= 0x80
 	}
 
-	if err := binary.Write(&buffer, binary.BigEndian, value); err != nil {
-		return nil, err
-	}
-
-	payload := buffer.Bytes()
+	buffer := CreateSerializer()
+	payload, _ := Serialize(buffer, value)
 	length := uint16(len(payload))
-
 	return &TLV{Tag: tag, Length: length, Value: payload}, nil
-}
-
-func TLV_serialize(tlv *TLV) ([]byte, error) {
-	var buf bytes.Buffer
-
-	if err := buf.WriteByte(tlv.Tag); err != nil {
-		return nil, err
-	}
-
-	if err := binary.Write(&buf, binary.BigEndian, tlv.Length); err != nil {
-		return nil, err
-	}
-
-	if _, err := buf.Write(tlv.Value); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-func TLV_deserialize(data []byte) (*TLV, error) {
-	buf := bytes.NewReader(data)
-
-	tag, err := buf.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-
-	var length uint16
-	if err := binary.Read(buf, binary.BigEndian, &length); err != nil {
-		return nil, err
-	}
-
-	value := make([]byte, length)
-	if _, err := buf.Read(value); err != nil {
-		return nil, err
-	}
-
-	return &TLV{Tag: tag, Length: length, Value: value}, nil
-}
-
-func TLV_unpack(tlv *TLV, out interface{}) error {
-	buf := bytes.NewReader(tlv.Value)
-	if err := binary.Read(buf, binary.BigEndian, out); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func TLV_embedded(tlv *TLV) bool {
