@@ -23,6 +23,118 @@ func init() {
 	runtime.Exit = applet.Crash
 }
 
+type endorsementStatus uint8
+
+const (
+	endorsementUnknown endorsementStatus = iota
+	endorsementActive
+	endorsementExpired
+)
+
+type endorsementEntry struct {
+	device util.USBDeviceID
+	status endorsementStatus
+	TTL    uint32
+	log    packetRingBuffer
+}
+
+type endorsementCache struct {
+	entries map[util.USBDeviceID]*endorsementEntry
+}
+
+func newEndorsementCache() *endorsementCache {
+	return &endorsementCache{
+		entries: make(map[util.USBDeviceID]*endorsementEntry),
+	}
+}
+
+// ======= Circular buffer logic =======
+
+const (
+	maxPacketsPerDevice     = 256
+	maxLoggedBytesPerPacket = 64
+)
+
+type packetRecord struct {
+	len  int
+	data [maxLoggedBytesPerPacket]byte
+}
+
+type packetRingBuffer struct {
+	next    int
+	wrapped bool
+	records [maxPacketsPerDevice]packetRecord
+}
+
+func (rb *packetRingBuffer) logPacket(pkt []byte) {
+	if len(pkt) == 0 {
+		return
+	}
+	if len(pkt) > maxLoggedBytesPerPacket {
+		pkt = pkt[:maxLoggedBytesPerPacket]
+	}
+
+	rec := &rb.records[rb.next]
+	rec.len = len(pkt)
+
+	copy(rec.data[:], pkt)
+	rb.next++
+	if rb.next >= maxPacketsPerDevice {
+		rb.next = 0
+		rb.wrapped = true
+	}
+}
+
+func (rb *packetRingBuffer) dumpToLog(dev util.USBDeviceID) {
+	start := 0
+	if rb.wrapped {
+		start = rb.next
+	}
+	idx := 0
+	for i := 0; i < maxPacketsPerDevice; i++ {
+		pos := (start + i) % maxPacketsPerDevice
+		rec := rb.records[pos]
+		if rec.len == 0 {
+			continue
+		}
+		idx++
+		log.Printf("[APPLET-USB] log[%d] dev=%s len=%d data=% x", idx, dev, rec.len, rec.data[:rec.len])
+	}
+}
+
+// ======= Checking endorsement cache and logging packets =======
+
+var usbEndorsements = newEndorsementCache()
+
+func handleUsbPacket(dev util.USBDeviceID, payload []byte) byte {
+	entry, ok := usbEndorsements.entries[dev]
+
+	if !ok {
+		log.Printf("[APPLET-USB] BLOCK dev=%s (not endorsed) len=%d", dev, len(payload))
+		return 0x00
+	}
+
+	// if TTL exhausted or status not active, mark as expired and block
+	if entry.status != endorsementActive || entry.TTL == 0 {
+		if entry.status != endorsementExpired {
+			entry.status = endorsementExpired
+		}
+		log.Printf("[APPLET-USB] BLOCK vID=%04x pID=%04x (endorsement expired, TTL=%d) len=%d",
+			dev.VendorID, dev.ProductID, entry.TTL, len(payload))
+		// TODO: Call placeholder re-endorsement function here
+		return 0x00
+	}
+
+	entry.TTL--
+	entry.log.logPacket(payload)
+
+	log.Printf("[APPLET-USB] PASS vID=%04x pID=%04x len=%d remaining_TTL=%d",
+		dev.VendorID, dev.ProductID, len(payload), entry.TTL)
+	return 0x01
+}
+
+// ======= RPC Communication =======
+
 func wait_command() *util.TLV {
 	var status bool
 	status = false
@@ -69,7 +181,9 @@ func main() {
 
 			log.Printf("[APPLET] Received USB packet from VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
 			log.Printf("[APPLET] Received USB packet %x\n", usbPkt)
-			send_response(0x30, false, []byte{1})
+
+			decision := handleUsbPacket(deviceID, usbPkt)
+			send_response(0x30, false, []byte{decision})
 
 		case 0x31: // endorse
 			var deviceID util.USBDeviceID
@@ -79,6 +193,15 @@ func main() {
 			log.Printf("[APPLET] Received endorsement request for VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
 
 			// Authentication procedure
+			success := true
+			if success {
+				endorsement_cache_entry := &endorsementEntry{
+					device: deviceID,
+					status: endorsementActive,
+					TTL:    1000, //TBD
+				}
+				usbEndorsements.entries[deviceID] = endorsement_cache_entry
+			}
 
 			send_response(0x31, false, []byte{1})
 		}
