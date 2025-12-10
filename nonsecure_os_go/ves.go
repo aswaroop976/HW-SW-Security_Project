@@ -15,7 +15,7 @@ func endorseDeviceID(deviceID util.USBDeviceID, reqCh chan<- smcRequest) bool {
 
 	var rspTLV *util.TLV
 	r := smcRequest{
-		tag:        0x31, // endorse
+		tag:        0x50, // endorse
 		embed:      false,
 		value:      serial,
 		expect_rsp: true,

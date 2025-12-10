@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"sync"
 
 	"github.com/usbarmory/GoTEE-example/util"
 	"github.com/usbarmory/GoTEE/applet"
@@ -32,6 +33,7 @@ const (
 )
 
 type endorsementEntry struct {
+	mu     sync.Mutex
 	device util.USBDeviceID
 	status endorsementStatus
 	TTL    uint32
@@ -46,6 +48,18 @@ func newEndorsementCache() *endorsementCache {
 	return &endorsementCache{
 		entries: make(map[util.USBDeviceID]*endorsementEntry),
 	}
+}
+
+func (entry *endorsementEntry) incrementTTL(increment int) {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	entry.TTL--
+}
+
+func (entry *endorsementEntry) modifyStatus(status endorsementStatus) {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	entry.status = status
 }
 
 // ======= Circular buffer logic =======
@@ -66,7 +80,10 @@ type packetRingBuffer struct {
 	records [maxPacketsPerDevice]packetRecord
 }
 
-func (rb *packetRingBuffer) logPacket(pkt []byte) {
+func (entry *endorsementEntry) logPacket(pkt []byte) {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+
 	if len(pkt) == 0 {
 		return
 	}
@@ -74,14 +91,14 @@ func (rb *packetRingBuffer) logPacket(pkt []byte) {
 		pkt = pkt[:maxLoggedBytesPerPacket]
 	}
 
-	rec := &rb.records[rb.next]
+	rec := &entry.log.records[entry.log.next]
 	rec.len = len(pkt)
 
 	copy(rec.data[:], pkt)
-	rb.next++
-	if rb.next >= maxPacketsPerDevice {
-		rb.next = 0
-		rb.wrapped = true
+	entry.log.next++
+	if entry.log.next >= maxPacketsPerDevice {
+		entry.log.next = 0
+		entry.log.wrapped = true
 	}
 }
 
@@ -109,27 +126,28 @@ var usbEndorsements = newEndorsementCache()
 func handleUsbPacket(dev util.USBDeviceID, payload []byte) byte {
 	entry, ok := usbEndorsements.entries[dev]
 
-	if !ok {
+	if !ok || entry.status == endorsementUnknown {
 		log.Printf("[APPLET-USB] BLOCK dev=%s (not endorsed) len=%d", dev, len(payload))
 		return 0x00
 	}
 
 	// if TTL exhausted or status not active, mark as expired and block
-	if entry.status != endorsementActive || entry.TTL == 0 {
-		if entry.status != endorsementExpired {
-			entry.status = endorsementExpired
-		}
+	if entry.status == endorsementExpired {
 		log.Printf("[APPLET-USB] BLOCK vID=%04x pID=%04x (endorsement expired, TTL=%d) len=%d",
 			dev.VendorID, dev.ProductID, entry.TTL, len(payload))
 		// TODO: Call placeholder re-endorsement function here
 		return 0x00
 	}
 
-	entry.TTL--
-	entry.log.logPacket(payload)
+	entry.incrementTTL(-1)
+	entry.logPacket(payload)
 
 	log.Printf("[APPLET-USB] PASS vID=%04x pID=%04x len=%d remaining_TTL=%d",
 		dev.VendorID, dev.ProductID, len(payload), entry.TTL)
+
+	if entry.status == endorsementActive && entry.TTL == 0 {
+		entry.modifyStatus(endorsementExpired)
+	}
 	return 0x01
 }
 
@@ -157,19 +175,50 @@ func send_response(tag byte, embed bool, value []byte) *util.TLV {
 	return rspTLV
 }
 
-func main() {
-	log.Printf("[APPLET] Booting!")
+func channel_receiver(usbCh, vesCh chan<- *util.TLV) {
+	log.Printf("[APPLET-RCV] Channel RCV Routine Booting!")
 
 	for {
 		cmdTLV := wait_command()
-		log.Printf("[APPLET] Received TAG: %x DATA: %s", cmdTLV.Tag, string(cmdTLV.Value))
+		log.Printf("[APPLET-RCV] Received TAG: %x DATA: %s", cmdTLV.Tag, string(cmdTLV.Value))
+
+		if cmdTLV.Tag == 0x7F { // quit
+			usbCh <- cmdTLV
+			vesCh <- cmdTLV
+			break
+		}
+
+		if (cmdTLV.Tag&0x7F) >= 0x30 && (cmdTLV.Tag&0x7F) < 0x50 {
+			// Belongs to the USB handler.
+			usbCh <- cmdTLV
+		}
+
+		if (cmdTLV.Tag&0x7F) >= 0x50 && (cmdTLV.Tag&0x7F) < 0x70 {
+			// Belongs to the Endorsement Service handler.
+			vesCh <- cmdTLV
+		}
+	}
+
+	log.Printf("[APPLET-RCV] Channel RCV Routine Booting!")
+}
+
+func channel_sender(usbCh, vesCh <-chan *util.TLV) {
+	// nothing for now
+}
+
+func usb_handler(ch <-chan *util.TLV, wg *sync.WaitGroup) {
+	defer wg.Done()
+	log.Printf("[APPLET-USB] USB Routine Booting!")
+
+	for {
+		cmdTLV := <-ch
+		log.Printf("[APPLET-USB] USB Routine received packet.")
 
 		if cmdTLV.Tag == 0x7F { // quit
 			break
 		}
 
-		switch cmdTLV.Tag & 0x7F {
-		case 0x30: // check device
+		if cmdTLV.Tag&0x7F == 0x30 {
 			rdr := util.CreateDeserializer(cmdTLV.Value)
 			tlvDeviceID := util.TLV_deserialize(rdr)
 			tlvUSBPacket := util.TLV_deserialize(rdr)
@@ -179,18 +228,35 @@ func main() {
 			util.Deserialize(rdr, &deviceID)
 			usbPkt := tlvUSBPacket.Value
 
-			log.Printf("[APPLET] Received USB packet from VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
-			log.Printf("[APPLET] Received USB packet %x\n", usbPkt)
+			log.Printf("[APPLET-USB] Received USB packet from VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
+			log.Printf("[APPLET-USB] Received USB packet %x\n", usbPkt)
 
 			decision := handleUsbPacket(deviceID, usbPkt)
 			send_response(0x30, false, []byte{decision})
+		}
+	}
 
-		case 0x31: // endorse
+	log.Printf("[APPLET-USB] USB Routine Exiting!")
+}
+
+func validation_handler(ch <-chan *util.TLV, wg *sync.WaitGroup) {
+	defer wg.Done()
+	log.Printf("[APPLET-VES] Validation Routine Booting!")
+
+	for {
+		cmdTLV := <-ch
+		log.Printf("[APPLET-VES] Validation Routine received packet.")
+
+		if cmdTLV.Tag == 0x7F { // quit
+			break
+		}
+
+		if cmdTLV.Tag&0x7F == 0x50 {
 			var deviceID util.USBDeviceID
 			rdr := util.CreateDeserializer(cmdTLV.Value)
 			util.Deserialize(rdr, &deviceID)
 
-			log.Printf("[APPLET] Received endorsement request for VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
+			log.Printf("[APPLET-VES] Received endorsement request for VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
 
 			// Authentication procedure
 			success := true
@@ -198,7 +264,7 @@ func main() {
 				endorsement_cache_entry := &endorsementEntry{
 					device: deviceID,
 					status: endorsementActive,
-					TTL:    1000, //TBD
+					TTL:    5, //TBD
 				}
 				usbEndorsements.entries[deviceID] = endorsement_cache_entry
 			}
@@ -206,6 +272,23 @@ func main() {
 			send_response(0x31, false, []byte{1})
 		}
 	}
+
+	log.Printf("[APPLET-VES] Validation Routine Exiting!")
+}
+
+func main() {
+	log.Printf("[APPLET] Booting!")
+
+	usbCh := make(chan *util.TLV)
+	vesCh := make(chan *util.TLV)
+	var wg sync.WaitGroup
+
+	go channel_receiver(usbCh, vesCh)
+
+	wg.Add(2)
+	go usb_handler(usbCh, &wg)
+	go validation_handler(vesCh, &wg)
+	wg.Wait()
 
 	log.Printf("[APPLET] Exiting!")
 	applet.Exit()
