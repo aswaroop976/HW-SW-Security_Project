@@ -95,6 +95,30 @@ func SMBridge(reqCh <-chan smcRequest) {
 	}
 }
 
+// Small helper to req/resp over smcRequestCh
+func smcRoundTrip(ch chan<- smcRequest, tag byte, value []byte) (*util.TLV, error) {
+	done := make(chan struct{})
+	var rsp *util.TLV
+
+	ch <- smcRequest{
+		tag: tag,
+		embed: false,
+		value: value,
+		expect_rsp: true,
+		rsp: &rsp,
+		done: done,
+	}
+
+	<-done
+
+	if rsp == nil {
+		log.Printf("no response from applet")
+		return nil, nil 
+	}
+	
+	return rsp, nil
+}
+
 func main() {
 	log.Printf("%s/%s (%s) • system/supervisor (Non-secure:%v)",
 		runtime.GOOS, runtime.GOARCH, runtime.Version(), imx6ul.ARM.NonSecure())

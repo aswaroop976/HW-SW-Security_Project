@@ -104,3 +104,29 @@ type USBDeviceID struct {
 	VendorID  uint16
 	ProductID uint16
 }
+
+// Attestation types:
+
+const (
+    TagQuit           = 0x7F
+    TagCheckDevice    = 0x30
+    TagEndorseRequest = 0x31 // you already have this
+    TagAuthChallenge  = 0x32 // Applet -> VES
+    TagAuthResponse   = 0x33 // VES -> Applet
+    TagAuthResult     = 0x34 // Applet -> VES (ACK/NACK)
+)
+
+type AuthChallenge struct {
+	Nonce[32] byte
+}
+
+type AuthResponse struct {
+	VESPub [32]byte
+	Nonce [32]byte
+	Sig [64]byte // ed25519 signature
+}
+
+type AuthResult struct {
+	OK byte // 1 = success, 0 = failure
+}
+

@@ -7,6 +7,7 @@ package gotee
 
 import (
 	"errors"
+	"crypto/rand"
 
 	usbarmory "github.com/usbarmory/tamago/board/usbarmory/mk2"
 
@@ -59,5 +60,14 @@ func (r *RPC) SendResponse(rsp *util.TLV, _ *bool) error {
 	appletRspCh <- rsp
 	appletRspLenCh <- rsp.Length
 	// log.Printf("received message... TAG: %d, LENGTH: %d, VALUE:%s", rsp.Tag, rsp.Length, string(rsp.Value))
+	return nil
+}
+
+func (r *RPC) GetChallenge(_ struct{}, out *util.AuthChallenge) error {
+	// generate a fresh 32-byte nonce using crypto/rand
+	if _, err := rand.Read(out.Nonce[:]); err != nil {
+		return errors.New("[RPC.GetChallenge] rand.Read error")
+		return err
+	}
 	return nil
 }
