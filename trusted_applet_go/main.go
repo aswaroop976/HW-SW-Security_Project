@@ -46,11 +46,11 @@ func send_response(tag byte, embed bool, value []byte) *util.TLV {
 }
 
 func main() {
-	log.Printf("Trusted Applet boot.")
+	log.Printf("[APPLET] Booting!")
 
 	for {
 		cmdTLV := wait_command()
-		log.Printf("APPLET Received TAG: %x DATA: %s", cmdTLV.Tag, string(cmdTLV.Value))
+		log.Printf("[APPLET] Received TAG: %x DATA: %s", cmdTLV.Tag, string(cmdTLV.Value))
 
 		if cmdTLV.Tag == 0x7F { // quit
 			break
@@ -59,11 +59,14 @@ func main() {
 		switch cmdTLV.Tag {
 		case 0x30: // check device
 			send_response(0x30, false, []byte{1})
-		case 0x31:
-			send_response(0x31, false, []byte("Hello from the Applet :)"))
+		case 0x31: // endorse
+			var deviceID util.USBDeviceID
+			util.Deserialize(cmdTLV.Value, &deviceID)
+			log.Printf("[APPLET] Received endorsement for VID: %04x, PID: %04x", deviceID.VendorID, deviceID.ProductID)
+			send_response(0x31, false, []byte{1})
 		}
 	}
 
-	log.Printf("Trusted Applet quits.")
+	log.Printf("[APPLET] Exiting!")
 	applet.Exit()
 }

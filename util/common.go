@@ -12,8 +12,23 @@ type TLV struct {
 	Value  []byte
 }
 
+func Serialize(value interface{}) ([]byte, error) {
+	var buffer bytes.Buffer
+	if err := binary.Write(&buffer, binary.BigEndian, value); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func Deserialize(buffer []byte, value interface{}) error {
+	if err := binary.Read(bytes.NewReader(buffer), binary.BigEndian, value); err != nil {
+		return err
+	}
+	return nil
+}
+
 func TLV_pack(tag byte, embed bool, value interface{}) (*TLV, error) {
-	var structBuf bytes.Buffer
+	var buffer bytes.Buffer
 
 	if tag&0x80 != 0 {
 		return nil, fmt.Errorf("tlv embed tag bit already set")
@@ -23,11 +38,11 @@ func TLV_pack(tag byte, embed bool, value interface{}) (*TLV, error) {
 		tag |= 0x80
 	}
 
-	if err := binary.Write(&structBuf, binary.BigEndian, value); err != nil {
+	if err := binary.Write(&buffer, binary.BigEndian, value); err != nil {
 		return nil, err
 	}
 
-	payload := structBuf.Bytes()
+	payload := buffer.Bytes()
 	length := uint16(len(payload))
 
 	return &TLV{Tag: tag, Length: length, Value: payload}, nil

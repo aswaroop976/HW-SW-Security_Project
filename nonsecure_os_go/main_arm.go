@@ -118,12 +118,12 @@ func main() {
 		done:       make(chan struct{}),
 	}
 
-	fmt.Printf("NonSecure OS sending terminate applet request to SMC serializer.\n")
+	fmt.Printf("[NS-OS] Terminating APPLET.\n")
 
 	smcRequestCh <- r // secure monitor call
 	<-r.done          // block until SMC completed
 	close(smcRequestCh)
 
-	log.Printf("Supervisor exits.")
+	log.Printf("[NS-OS] Exiting!")
 	exit()
 }

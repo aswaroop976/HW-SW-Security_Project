@@ -63,7 +63,7 @@ func handleUsbPacketFromDevice(deviceID util.USBDeviceID, pkt []byte, reqCh chan
 		done:       make(chan struct{}),
 	}
 
-	fmt.Printf("USB Bridge sending DEVICE CHECK command.\n")
+	fmt.Printf("[BRIDGE] Sending DEVICE CHECK (0x30) command.\n")
 
 	reqCh <- r // secure monitor call
 	<-r.done   // block until SMC completed
@@ -94,17 +94,18 @@ func scan_USB(reqCh chan<- smcRequest) {
 
 		permitted := handleUsbPacketFromDevice(deviceID, pkt, reqCh)
 		if !permitted {
-			log.Printf("[REPLAY] packet BLOCKED port = %d", usbPort)
+			log.Printf("[BRIDGE] Packet BLOCKED port = %d", usbPort)
 		} else {
-			log.Printf("[REPLAY] packet ACCEPTED port = %d", usbPort)
+			log.Printf("[BRIDGE] Packet ACCEPTED port = %d", usbPort)
 		}
 	}
 
-	log.Printf("[REPLAY] embedded keyboard packet replay complete")
+	log.Printf("[BRIDGE] USB packet replay complete.")
 }
 
 func USBBridge(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
 	defer wg.Done()
+	fmt.Printf("[BRIDGE] Booting!\n")
 	scan_USB(reqCh)
-	fmt.Printf("USB Bridge finished\n")
+	fmt.Printf("[BRIDGE] Exiting!\n")
 }
