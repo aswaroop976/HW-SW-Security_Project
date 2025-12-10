@@ -10,12 +10,19 @@ import (
 	"os"
 	"runtime"
 	"time"
+	//"crypto/aes"
+	"crypto/ed25519"
+	//"crypto/rand"
+	"crypto/sha256"
+	//"encoding/binary"
+	//"encoding/hex"
 
 	"github.com/usbarmory/GoTEE/applet"
 	"github.com/usbarmory/GoTEE/syscall"
 
 	"github.com/usbarmory/GoTEE-example/mem"
 	"github.com/usbarmory/GoTEE-example/util"
+	//"github.com/usbarmory/tamago/soc/nxp/imx6ul"
 )
 
 func init() {
@@ -46,6 +53,72 @@ func testRPC() {
 	}
 }
 
+// Quote is a tiny stand-in for an attestation structure.
+type Quote struct {
+	Nonce    [32]byte
+	CodeHash [32]byte
+	BuildID  string
+}
+
+func testChallenge() {
+	var ch util.Challenge
+	log.Printf("applet: requesting challenge nonce via RPC")
+	err := syscall.Call("RPC.GetChallenge", struct{}{}, &ch)
+	if err != nil {
+		log.Printf("applet: RPC.GetChallenge error: %v", err)
+	}
+	log.Printf("applet: received challenge nonce: %x", ch.Nonce[:])
+}
+
+// testEd25519 uses randomness from syscall.GetRandom (monitor → hardware RNG)
+// and checks sign/verify, like what you’ll use for mutual attestation.
+func testEd25519() {
+	log.Printf("applet: testing ed25519 (using syscall.GetRandom for entropy)")
+
+	// 1) get 32 bytes of entropy from the monitor (which uses RNGB under the hood)
+	seed := make([]byte, ed25519.SeedSize)
+	syscall.GetRandom(seed, uint(len(seed)))
+
+	// 2) derive keypair from seed
+	priv := ed25519.NewKeyFromSeed(seed)
+	pub := priv.Public().(ed25519.PublicKey)
+
+	// 3) build a fake "quote"
+	var q Quote
+	var nonce [32]byte
+	syscall.GetRandom(nonce[:], uint(len(nonce)))
+	q.Nonce = nonce
+	q.CodeHash = sha256.Sum256([]byte("test-applet-code"))
+	q.BuildID = "trusted-applet-test-v1"
+
+	// canonical hash of the quote
+	h := sha256.New()
+	h.Write(q.Nonce[:])
+	h.Write(q.CodeHash[:])
+	h.Write([]byte(q.BuildID))
+	msg := h.Sum(nil)
+
+	sig := ed25519.Sign(priv, msg)
+	ok := ed25519.Verify(pub, msg, sig)
+
+	log.Printf("applet: quote nonce    = %x", q.Nonce[:])
+	log.Printf("applet: quote codehash = %x", q.CodeHash[:])
+	log.Printf("applet: sig            = %x", sig)
+	log.Printf("applet: verify(pub, msg, sig) = %v", ok)
+
+	// tamper test
+	h2 := sha256.New()
+	h2.Write(q.Nonce[:])
+
+	diffHash := sha256.Sum256([]byte("different-code"))
+	h2.Write(diffHash[:])
+
+	h2.Write([]byte(q.BuildID))
+	msgTampered := h2.Sum(nil)
+	ok2 := ed25519.Verify(pub, msgTampered, sig)
+	log.Printf("applet: verify(pub, tampered_msg, sig) = %v (should be false)", ok2)
+}
+
 func main() {
 	log.Printf("%s/%s (%s) • TEE user applet", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
@@ -54,6 +127,10 @@ func main() {
 
 	// test RPC interface
 	testRPC()
+
+	testEd25519()
+
+	testChallenge()
 
 	log.Printf("applet will sleep for 5 seconds")
 

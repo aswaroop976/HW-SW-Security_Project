@@ -7,6 +7,7 @@ package gotee
 
 import (
 	"errors"
+	"crypto/rand"
 
 	usbarmory "github.com/usbarmory/tamago/board/usbarmory/mk2"
 
@@ -34,5 +35,15 @@ func (r *RPC) LED(led util.LEDStatus, _ *bool) error {
 		return errors.New("invalid LED")
 	}
 
+	return nil
+}
+
+// Generates Nonce to prevent replay attacks
+func (r *RPC) GetChallenge(_ struct{}, out *util.Challenge) error {
+	// generate a fresh 32-byte nonce using crypto/rand
+	if _, err := rand.Read(out.Nonce[:]); err != nil {
+		return errors.New("[RPC.GetChallenge] rand.Read error")
+		return err
+	}
 	return nil
 }
