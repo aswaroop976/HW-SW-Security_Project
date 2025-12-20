@@ -26,7 +26,10 @@ var nsBoot bool
 
 var appletCmdCh chan *util.TLV
 var appletRspCh chan *util.TLV
+var appletToOSCh chan *util.TLV
+var osRespondCh chan *util.TLV
 var appletRspLenCh chan uint16
+var appletToOSLenCh chan uint16
 
 func GoTEE() (err error) {
 	var wg sync.WaitGroup
@@ -43,7 +46,9 @@ func GoTEE() (err error) {
 
 	appletCmdCh = make(chan *util.TLV, 10)
 	appletRspCh = make(chan *util.TLV, 10)
+	appletToOSCh = make(chan *util.TLV, 10)
 	appletRspLenCh = make(chan uint16, 10)
+	appletToOSLenCh = make(chan uint16, 10)
 
 	nsBoot = true
 

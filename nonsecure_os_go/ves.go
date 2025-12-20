@@ -1,51 +1,51 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"sync"
-	"crypto/sha256"
-	"crypto/ed25519"
 
 	"github.com/usbarmory/GoTEE-example/util"
 )
 
-
 var VESPub = [32]byte{
-    0x67, 0x95, 0x5e, 0xd9, 0x4d, 0xb1, 0x0c, 0xb4,
-    0xb1, 0x23, 0x46, 0x54, 0xc6, 0x8c, 0xdb, 0x90,
-    0x33, 0x4b, 0xa0, 0xcf, 0xc1, 0x83, 0x27, 0xd9,
-    0xcc, 0xcf, 0xa5, 0x37, 0x74, 0x57, 0x46, 0x50,
+	0x67, 0x95, 0x5e, 0xd9, 0x4d, 0xb1, 0x0c, 0xb4,
+	0xb1, 0x23, 0x46, 0x54, 0xc6, 0x8c, 0xdb, 0x90,
+	0x33, 0x4b, 0xa0, 0xcf, 0xc1, 0x83, 0x27, 0xd9,
+	0xcc, 0xcf, 0xa5, 0x37, 0x74, 0x57, 0x46, 0x50,
 }
 
 var VESPriv = [64]byte{
-    0x7d, 0x50, 0x56, 0xc1, 0x21, 0xa8, 0x11, 0x0b,
-    0x14, 0x69, 0xbd, 0x26, 0x3b, 0x93, 0x5f, 0x5d,
-    0x6e, 0xe3, 0xda, 0x6b, 0x5a, 0x4e, 0x3c, 0x6c,
-    0x7f, 0x70, 0xb0, 0x55, 0xd6, 0x17, 0x6a, 0x4c,
-    0x67, 0x95, 0x5e, 0xd9, 0x4d, 0xb1, 0x0c, 0xb4,
-    0xb1, 0x23, 0x46, 0x54, 0xc6, 0x8c, 0xdb, 0x90,
-    0x33, 0x4b, 0xa0, 0xcf, 0xc1, 0x83, 0x27, 0xd9,
-    0xcc, 0xcf, 0xa5, 0x37, 0x74, 0x57, 0x46, 0x50,
+	0x7d, 0x50, 0x56, 0xc1, 0x21, 0xa8, 0x11, 0x0b,
+	0x14, 0x69, 0xbd, 0x26, 0x3b, 0x93, 0x5f, 0x5d,
+	0x6e, 0xe3, 0xda, 0x6b, 0x5a, 0x4e, 0x3c, 0x6c,
+	0x7f, 0x70, 0xb0, 0x55, 0xd6, 0x17, 0x6a, 0x4c,
+	0x67, 0x95, 0x5e, 0xd9, 0x4d, 0xb1, 0x0c, 0xb4,
+	0xb1, 0x23, 0x46, 0x54, 0xc6, 0x8c, 0xdb, 0x90,
+	0x33, 0x4b, 0xa0, 0xcf, 0xc1, 0x83, 0x27, 0xd9,
+	0xcc, 0xcf, 0xa5, 0x37, 0x74, 0x57, 0x46, 0x50,
 }
 
 func VESPublicKey() ed25519.PublicKey {
-    return ed25519.PublicKey(VESPub[:])
+	return ed25519.PublicKey(VESPub[:])
 }
 
 func VESPrivateKey() ed25519.PrivateKey {
-    return ed25519.PrivateKey(VESPriv[:])
+	return ed25519.PrivateKey(VESPriv[:])
 }
 
 func endorseDeviceID(deviceID util.USBDeviceID, reqCh chan<- smcRequest) bool {
 
-	buf, _ := util.Serialize(&deviceID)
+	buf := util.CreateSerializer()
+	serial, _ := util.Serialize(buf, &deviceID)
 
 	var rspTLV *util.TLV
 	r := smcRequest{
 		tag:        0x31, // endorse
 		embed:      false,
-		value:      buf,
+		value:      serial,
 		expect_rsp: true,
 		rsp:        &rspTLV,
 		done:       make(chan struct{}),
@@ -76,7 +76,8 @@ func mutualAttestationVES(reqCh chan<- smcRequest) error {
 	}
 
 	var chal util.AuthChallenge
-	if err := util.Deserialize(rspTLV.Value, &chal); err != nil {
+	rdr := util.CreateDeserializer(rspTLV.Value)
+	if err := util.Deserialize(rdr, &chal); err != nil {
 		log.Printf("[VES] deserialize issue")
 		return fmt.Errorf("deserialize challenge: %w", err)
 	}
@@ -90,7 +91,8 @@ func mutualAttestationVES(reqCh chan<- smcRequest) error {
 	resp.Nonce = chal.Nonce
 	copy(resp.Sig[:], sig)
 
-	respBytes, err := util.Serialize(resp)
+	buf := util.CreateSerializer()
+	respBytes, err := util.Serialize(buf, resp)
 	if err != nil {
 		log.Printf("[VES] serialize issue")
 		return fmt.Errorf("serialize auth response: %w", err)
@@ -114,7 +116,8 @@ func mutualAttestationVES(reqCh chan<- smcRequest) error {
 	//}
 
 	var result util.AuthResult
-	if err := util.Deserialize(rspTLV.Value, &result); err != nil {
+	rdr = util.CreateDeserializer(rspTLV.Value)
+	if err := util.Deserialize(rdr, &result); err != nil {
 		return fmt.Errorf("deserialize auth result: %w", err)
 	}
 
@@ -133,10 +136,10 @@ func buildVESAuthMessage(nonce [32]byte) []byte {
 	return h.Sum(nil)
 }
 
-func ValidationService(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
+func ValidationService(reqCh chan<- smcRequest, done <-chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	fmt.Printf("[VES] Booting!\n")
-	
+
 	// Attestation logic:
 	if err := mutualAttestationVES(reqCh); err != nil {
 		log.Printf("[VES] Mutual attestation failed: %v", err)
@@ -158,6 +161,15 @@ func ValidationService(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
 		log.Printf("[VES] Failure in endorsing device VID: %04x, PID: %04x",
 			testDeviceID.VendorID, testDeviceID.ProductID)
 	}
+
+	// for {
+	// 	cmd := WaitAppletCommand(done)
+	// 	if cmd == nil {
+	// 		break
+	// 	}
+
+	// 	log.Printf("[VES] Received Applet Command TAG: %04x, Value: %x\n", cmd.Tag, cmd.Value)
+	// }
 
 	fmt.Printf("[VES] Exiting!\n")
 }

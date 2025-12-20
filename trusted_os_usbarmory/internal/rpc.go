@@ -6,8 +6,8 @@
 package gotee
 
 import (
-	"errors"
 	"crypto/rand"
+	"errors"
 
 	usbarmory "github.com/usbarmory/tamago/board/usbarmory/mk2"
 
@@ -63,11 +63,33 @@ func (r *RPC) SendResponse(rsp *util.TLV, _ *bool) error {
 	return nil
 }
 
+func (r *RPC) CheckRspChannel(_ *bool, ready *bool) error {
+	// log.Printf("Checking for APPLET command. %d commands in queue.", len(appletCmdCh))
+	*ready = len(osRespondCh) > 0
+	return nil
+}
+
+func (r *RPC) PopRspChannel(_ *bool, s_tlv *util.TLV) error {
+	// log.Printf("Collecting APPLET command.")
+	ns_tlv := <-osRespondCh
+	secure_buffer := make([]byte, ns_tlv.Length)
+	copy(secure_buffer, ns_tlv.Value)
+	s_tlv.Tag = ns_tlv.Tag
+	s_tlv.Length = ns_tlv.Length
+	s_tlv.Value = secure_buffer
+	return nil
+}
+
 func (r *RPC) GetChallenge(_ struct{}, out *util.AuthChallenge) error {
 	// generate a fresh 32-byte nonce using crypto/rand
 	if _, err := rand.Read(out.Nonce[:]); err != nil {
 		return errors.New("[RPC.GetChallenge] rand.Read error")
-		return err
 	}
+	return nil
+}
+
+func (r *RPC) SendCommand(cmd *util.TLV, _ *bool) error {
+	appletToOSCh <- cmd
+	appletToOSLenCh <- cmd.Length
 	return nil
 }

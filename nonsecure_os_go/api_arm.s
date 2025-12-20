@@ -41,6 +41,33 @@ TEXT ·getAppletResponse(SB),$0-1
 
 	RET
 
+// func respondApplet(tlv *util.TLV)
+TEXT respondApplet(SB),$0-1
+	MOVW	$53, R0
+	MOVW	tlv+0(FP), R1
+
+	WORD	$0xe1600070 // smc 0
+
+	RET
+
+// func ·checkAppletCommand(check *uint16)
+TEXT ·checkAppletCommand(SB),$0-1
+	MOVW	$54, R0
+	MOVW	check+0(FP), R1
+
+	WORD	$0xe1600070 // smc 0
+
+	RET
+
+// func ·getAppletCommand(tlv *util.TLV)
+TEXT ·getAppletCommand(SB),$0-1
+	MOVW	$55, R0
+	MOVW	tlv+0(FP), R1
+
+	WORD	$0xe1600070 // smc 0
+
+	RET
+
 // func exit()
 TEXT ·exit(SB),$0
 	MOVW	$const_SYS_EXIT, R0

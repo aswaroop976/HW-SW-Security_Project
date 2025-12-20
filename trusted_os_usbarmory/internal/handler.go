@@ -67,6 +67,33 @@ func goHandler(ctx *monitor.ExecCtx) (err error) {
 		// log.Printf("SYSCALL received message... TAG: %d, LENGTH: %d, VALUE:%s", s_tlv.Tag, s_tlv.Length, string(s_tlv.Value))
 		// log.Printf("copied message... TAG: %d, LENGTH: %d, VALUE:%s", ns_tlv.Tag, ns_tlv.Length, string(ns_tlv.Value))
 
+	case 53:
+		// log.Printf("Received applet-response syscall.")
+		tlv_addr := uintptr(ctx.A1())
+		tlv := (*util.TLV)(unsafe.Pointer(tlv_addr))
+		osRespondCh <- tlv
+
+	case 54:
+		// log.Printf("Received applet-command-check syscall.")
+		check_addr := uintptr(ctx.A1())
+		check := (*uint16)(unsafe.Pointer(check_addr))
+		if len(appletToOSCh) > 0 && len(appletToOSLenCh) > 0 {
+			*check = <-appletToOSLenCh
+		} else {
+			*check = 0
+		}
+
+	case 55:
+		// log.Printf("Received applet-command-get syscall.")
+		ns_tlv_addr := uintptr(ctx.A1())
+		ns_tlv := (*util.TLV)(unsafe.Pointer(ns_tlv_addr))
+		s_tlv := <-appletToOSCh
+
+		// log.Printf("Copying...")
+		ns_tlv.Tag = s_tlv.Tag
+		ns_tlv.Length = s_tlv.Length
+		copy(ns_tlv.Value, s_tlv.Value)
+
 	case syscall.SYS_WRITE:
 		// Override write syscall to avoid interleaved logs and to log
 		// simultaneously to remote terminal and serial console.

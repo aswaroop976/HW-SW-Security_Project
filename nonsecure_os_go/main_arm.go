@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 	_ "unsafe"
 
 	"github.com/usbarmory/tamago/dma"
@@ -66,6 +67,7 @@ func wait_response() *util.TLV {
 	rspLen := uint16(0)
 	for rspLen == 0 {
 		checkAppletResponse(&rspLen)
+		time.Sleep(100 * time.Microsecond)
 	}
 
 	var rspTLV util.TLV
@@ -73,6 +75,33 @@ func wait_response() *util.TLV {
 	rspTLV.Value = make([]byte, rspLen)
 	getAppletResponse(&rspTLV)
 	return &rspTLV
+}
+
+func WaitAppletCommand(done <-chan bool) *util.TLV {
+	rspLen := uint16(0)
+	for rspLen == 0 {
+		checkAppletCommand(&rspLen)
+
+		if len(done) > 0 {
+			return nil
+		}
+	}
+
+	var rspTLV util.TLV
+	rspTLV.Length = rspLen
+	rspTLV.Value = make([]byte, rspLen)
+	getAppletCommand(&rspTLV)
+	return &rspTLV
+}
+
+func SendAppletResponse(tag byte, embed bool, value []byte) *util.TLV {
+	cmdTLV, err := util.TLV_pack(tag, embed, []byte(value))
+	if err != nil {
+		panic(err)
+	}
+
+	respondApplet(cmdTLV)
+	return cmdTLV
 }
 
 // Request type: each goroutine creates one of these
@@ -101,21 +130,21 @@ func smcRoundTrip(ch chan<- smcRequest, tag byte, value []byte) (*util.TLV, erro
 	var rsp *util.TLV
 
 	ch <- smcRequest{
-		tag: tag,
-		embed: false,
-		value: value,
+		tag:        tag,
+		embed:      false,
+		value:      value,
 		expect_rsp: true,
-		rsp: &rsp,
-		done: done,
+		rsp:        &rsp,
+		done:       done,
 	}
 
 	<-done
 
 	if rsp == nil {
 		log.Printf("no response from applet")
-		return nil, nil 
+		return nil, nil
 	}
-	
+
 	return rsp, nil
 }
 
@@ -124,13 +153,14 @@ func main() {
 		runtime.GOOS, runtime.GOARCH, runtime.Version(), imx6ul.ARM.NonSecure())
 
 	smcRequestCh := make(chan smcRequest)
+	usbComplete := make(chan bool)
 	var wg sync.WaitGroup
 
 	go SMBridge(smcRequestCh)
 
 	wg.Add(2)
-	go USBBridge(smcRequestCh, &wg)
-	go ValidationService(smcRequestCh, &wg)
+	go USBBridge(smcRequestCh, usbComplete, &wg)
+	go ValidationService(smcRequestCh, usbComplete, &wg)
 	wg.Wait()
 
 	r := smcRequest{

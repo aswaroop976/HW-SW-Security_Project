@@ -53,11 +53,18 @@ func fromHexChar(c byte) int {
 }
 
 func handleUsbPacketFromDevice(deviceID util.USBDeviceID, pkt []byte, reqCh chan<- smcRequest) bool {
+	didTLV, _ := util.TLV_pack(0x40, false, deviceID)
+	pktTLV, _ := util.TLV_pack(0x41, false, pkt)
+
+	buf := util.CreateSerializer()
+	util.TLV_serialize(buf, didTLV)
+	serial, _ := util.TLV_serialize(buf, pktTLV)
+
 	var rspTLV *util.TLV
 	r := smcRequest{
 		tag:        0x30, // device check
-		embed:      false,
-		value:      pkt,
+		embed:      true,
+		value:      serial,
 		expect_rsp: true,
 		rsp:        &rspTLV,
 		done:       make(chan struct{}),
@@ -103,9 +110,10 @@ func scan_USB(reqCh chan<- smcRequest) {
 	log.Printf("[BRIDGE] USB packet replay complete.")
 }
 
-func USBBridge(reqCh chan<- smcRequest, wg *sync.WaitGroup) {
+func USBBridge(reqCh chan<- smcRequest, usb_done chan<- bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	fmt.Printf("[BRIDGE] Booting!\n")
 	scan_USB(reqCh)
+	usb_done <- true
 	fmt.Printf("[BRIDGE] Exiting!\n")
 }

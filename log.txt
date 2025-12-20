@@ -1,0 +1,64 @@
+00:00:38 SM waiting for applet and kernel
+00:00:38 SM starting mode:USR sp:0x12000000 pc:0x1008e830 ns:false
+00:00:38 SM starting mode:SYS sp:0x00000000 pc:0x8008e60c ns:true
+00:00:38 tamago/arm (go1.25.4) • system/supervisor (Non-secure:true)
+[BRIDGE] Booting!
+00:00:38 [APPLET] Booting!
+[BRIDGE] Sending DEVICE CHECK (0x30) command.
+[VES] Booting!
+00:00:38 [VES] Starting attestation with applet
+00:00:38 [APPLET] Received TAG: b0 DATA: 400004046dc53f4100080000160000000000
+00:00:38 [APPLET] Received USB packet from VID: 046d, PID: c53f
+00:00:38 [APPLET] Received USB packet 0000160000000000
+00:00:38 [APPLET-USB] BLOCK dev={%!s(uint16=1133) %!s(uint16=50495)} (not endorsed) len=8
+00:00:38 [BRIDGE] Packet BLOCKED port = 6
+00:00:38 [APPLET] Received TAG: 31 DATA: 
+[BRIDGE] Sending DEVICE CHECK (0x30) command.
+00:00:38 [APPLET] VES not authenticated. Creating Authentication challenge.
+00:00:38 Applet received NONCE: a77d973e6394d9623f932ede127d59b1e348be98883f80ddaa97ca921a267ad3
+00:00:39 [VES] Received AuthChallenge from trusted_applet
+00:00:39 [APPLET] Sent auth challenge to VES (nonce from trusted_os)
+00:00:39 [APPLET] Received TAG: b0 DATA: 400004046dc53f4100080000000000000000
+00:00:39 [APPLET] Received USB packet from VID: 046d, PID: c53f
+00:00:39 [APPLET] Received USB packet 0000000000000000
+00:00:39 [APPLET-USB] BLOCK dev={%!s(uint16=1133) %!s(uint16=50495)} (not endorsed) len=8
+00:00:39 [BRIDGE] Packet BLOCKED port = 6
+[BRIDGE] Sending DEVICE CHECK (0x30) command.
+00:00:39 [APPLET] Received TAG: 33 DATA: 67955ed94db10cb4b1234654c68cdb90334ba0cfc18327d9cccfa53
+774574650a77d973e6394d9623f932ede127d59b1e348be98883f80ddaa97ca921a267ad32c63c023a507a7e2a3a9417
+49b24c1f6e7fa17976fbc3d87fb719cc496f35fad7c880cc7e47766d385792bd804696a940dc2ec4d7a06eb5debeb771
+211f3ad0a
+00:00:39 [APPLET] VES NONCE received matches challenge NONCE.
+00:00:39 [APPLET] Signature verification succeeded.
+00:00:39 [APPLET] VES authenticated
+00:00:39 [VES] Received AuthResult from trusted_applet
+00:00:39 [APPLET] Received TAG: b0 DATA: 400004046dc53f4100080000160000000000
+00:00:39 [VES] Authenticated by applet
+00:00:39 [APPLET] Received USB packet from VID: 046d, PID: c53f
+00:00:39 [VES] Mutual attestation succeeded, proceeding with validation logic
+00:00:39 [APPLET] Received USB packet 0000160000000000
+[VES] Sending DEVICE ENDORSE (0x31) command.
+00:00:39 [APPLET-USB] BLOCK dev={%!s(uint16=1133) %!s(uint16=50495)} (not endorsed) len=8
+00:00:39 [BRIDGE] Packet BLOCKED port = 6
+00:00:39 [APPLET] Received TAG: 31 DATA: 046dc53f
+[BRIDGE] Sending DEVICE CHECK (0x30) command.
+00:00:39 [APPLET] Received endorsement for VID: 046d, PID: c53f
+00:00:39 [VES] Success in endorsing device VID: 046d, PID: c53f
+[VES] Exiting!
+00:00:39 [APPLET] Received TAG: b0 DATA: 400004046dc53f4100080000000000000000
+00:00:39 [APPLET] Received USB packet from VID: 046d, PID: c53f
+00:00:39 [APPLET] Received USB packet 0000000000000000
+00:00:39 [APPLET-USB] PASS vID=046d pID=c53f len=8 remaining_TTL=999
+00:00:39 [BRIDGE] Packet ACCEPTED port = 6
+[BRIDGE] Sending DEVICE CHECK (0x30) command.
+00:00:39 [APPLET] Received TAG: b0 DATA: 400004046dc53f4100080000160000000000
+00:00:39 [APPLET] Received USB packet from VID: 046d, PID: c53f
+00:00:39 [APPLET] Received USB packet 0000160000000000
+00:00:39 [APPLET-USB] PASS vID=046d pID=c53f len=8 remaining_TTL=998
+00:00:39 [BRIDGE] Packet ACCEPTED port = 6
+[BRIDGE] Sending DEVICE CHECK (0x30) command.
+00:00:39 [APPLET] Received TAG: b0 DATA: 400004046dc53f4100080000000000000000
+00:00:39 [APPLET] Received USB packet from VID: 046d, PID: c53f
+00:00:39 [APPLET] Received USB packet 0000000000000000
+00:00:39 [APPLET-USB] PASS vID=046d pID=c53f len=8 remaining_TTL=997
+00:00:39 [BRIDGE] Packet ACCEPTED port = 6
